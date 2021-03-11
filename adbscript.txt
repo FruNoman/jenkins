@@ -1,0 +1,27 @@
+import hudson.util.RemotingDiagnostics;
+import java.util.regex.Pattern
+import java.util.regex.Matcher
+
+String serial = ''
+     Pattern pattern = Pattern.compile(".*\\W*udid\\s(.*)");
+                     Matcher matcher = pattern.matcher(DUT.toString());
+                     if (matcher.matches()){
+                        serial= matcher.group(1).trim()
+                     }else{
+                          serial = device.toString().trim()
+                       }
+
+def chanel = jenkins.model.Jenkins.instance.getComputer(node).getChannel()
+
+String modelCommand = 'def proc = "adb -s '+serial+' shell getprop ro.product.model".execute(); proc.waitFor(); println proc.in.text';
+String buildCommand = 'def proc = "adb -s '+serial+' shell getprop ro.build.version.incremental".execute(); proc.waitFor(); println proc.in.text';
+String sdkCommand = 'def proc = "adb -s '+serial+' shell getprop ro.build.version.sdk".execute(); proc.waitFor(); println proc.in.text';
+String tagsCommand = 'def proc = "adb -s '+serial+' shell getprop ro.system.build.tags".execute(); proc.waitFor(); println proc.in.text';
+
+
+def modelResult = RemotingDiagnostics.executeGroovy(modelCommand,chanel).toString()
+def buildResult = RemotingDiagnostics.executeGroovy(buildCommand,chanel).toString()
+def sdkResult = RemotingDiagnostics.executeGroovy(sdkCommand,chanel).toString()
+def tagsResult = RemotingDiagnostics.executeGroovy(tagsCommand,chanel).toString()
+
+return "<b>  Model: "+modelResult+"<br> Build: "+buildResult+"<br> SDK version: "+sdkResult+"<br> Tags: "+tagsResult+"</b>"

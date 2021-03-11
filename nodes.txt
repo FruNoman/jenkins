@@ -1,0 +1,3 @@
+  def nodes = ['any',]
+        nodes =   jenkins.model.Jenkins.instance.nodes.collect { node ->node.name }
+        return nodes

@@ -1,0 +1,22 @@
+import hudson.util.RemotingDiagnostics;
+
+def propsDevices = []
+uname = 'def proc = "adb devices".execute(); proc.waitFor(); println proc.in.text';
+def chanel = jenkins.model.Jenkins.instance.getComputer(node).getChannel()
+def result = RemotingDiagnostics.executeGroovy(uname,chanel).toString()
+if(!result.contains('Exception')){
+def myList = result.split('\n') as List
+for(String str in myList){
+if(!str.contains('attached')){
+propsDevices.add(str.replace('device',''))
+}
+}
+}
+def props = []
+
+for(String res in propsDevices){
+command = 'def proc = "adb -s '+res+' shell getprop ro.product.model".execute(); proc.waitFor(); println proc.in.text';
+def propResult = RemotingDiagnostics.executeGroovy(command,chanel).toString()
+props.add(propResult+" udid "+res)
+}
+return props.reverse()

@@ -1,0 +1,14 @@
+def command = "git ls-remote  ssh://renesas.buildbot@automotive.globallogic.com:29418/RenesasAutomationExperimental"
+
+def proc = command.execute()
+proc.waitFor()              
+def results = []
+def lines = proc.in.text.readLines() 
+for(String str:lines){
+if(str.contains('heads')){
+   def result = str.replaceAll(/[a-z0-9]*\trefs\/heads\//, '')
+    results.add(result) 
+}
+}
+
+return results

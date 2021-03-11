@@ -1,0 +1,145 @@
+import java.util.regex.Pattern
+import java.util.regex.Matcher
+import hudson.tasks.test.AbstractTestResultAction
+import hudson.model.Actionable
+import hudson.tasks.junit.CaseResult
+import hudson.tasks.test.TestResult
+
+def jobName = ''
+def mailRecipients = ''
+def status = ''
+def totalCount = 0
+def failedCount = 0
+def skippedCount = 0
+def passCount = 0
+def failedTestDescription = ''
+
+def runSuites = '-Pall '
+
+@NonCPS
+def convertUdid(String udid){
+     Pattern pattern = Pattern.compile(".*\\W*udid\\s(.*)");
+     Matcher matcher = pattern.matcher(udid);
+     if (matcher.matches()){
+        return matcher.group(1).trim()+'_'+node
+    }else{
+        return udid.trim()+'_'+node
+     }
+  
+}
+
+
+pipeline{
+    agent {label node}
+    
+     options{
+         lock(resource: convertUdid(DUT))
+       }
+    
+    stages{
+        stage('Clone repository'){
+            steps{
+                 git(
+                     credentialsId: '8d460077-8168-447c-ba98-685d9d8a94fc',
+                     url:"ssh://automotive.globallogic.com:29418/RenesasAutomationExperimental",
+                     branch: "${branch}"
+                    )
+            }
+        }
+
+        stage('Init variables'){
+            steps{
+                script{
+                     Pattern pattern = Pattern.compile(".*\\W*udid\\s(.*)");
+                     Matcher matcher = pattern.matcher(DUT.toString());
+                     if (matcher.matches()){
+                         env.ANDROID_SERIAL= matcher.group(1).trim()
+                         print('Match pattern: '+env.ANDROID_SERIAL)
+                     }else{
+                          env.ANDROID_SERIAL = DUT.toString().trim()
+                          print('NO match pattern: '+env.ANDROID_SERIAL)
+                       }
+                       StringBuilder builder = new StringBuilder();
+                       for(String suite:suites.split(',')){
+                           if(!suite.isEmpty()){
+                                builder.append('-P')
+                                builder.append(suite+' ')
+                           }
+                       }
+                       if(!builder.toString().isEmpty()){
+                           runSuites = builder.toString()
+                       }
+                       print('suites:'+runSuites)
+                       env.CURRENT_NODE=node.toString()
+                        mailRecipients = "Renesas_Test_Team@globallogic.com"
+                        jobName = currentBuild.fullDisplayName
+                        currentBuild.description = "branch: "+branch+", node: "+node+", serial: "+env.ANDROID_SERIAL+", suites: "+suites
+              
+                }
+            }
+        }
+        
+         stage('Tests'){
+            steps{
+                script{
+                         sh('./gradlew clean test '+runSuites +'-i')
+                }
+            }
+        }
+    }
+     post  {
+        always {
+            junit 'result/**/*.xml'
+              script {
+            allure([
+                    includeProperties: false,
+                    jdk: '',
+                    properties: [],
+                    reportBuildPolicy: 'ALWAYS',
+                    results: [[path: 'build/allure-results']]
+            ])
+                    status = currentBuild.result
+                    AbstractTestResultAction testResultAction = currentBuild.rawBuild.getAction(AbstractTestResultAction.class)
+                    totalCount = testResultAction.getPassedTests().size()
+                    failedCount = testResultAction.getFailCount()
+                    skippedCount = testResultAction.getSkipCount()
+
+              }
+                     emailext attachmentsPattern: 'build/results.xlsx', body: 
+                "<!DOCTYPE html>"+
+                "<head>"+
+                "<title>Build report</title>"+
+                "<style type='text/css'>"+
+                "body{margin: 0px;padding: 15px;}"+
+                "body, td, th {font-family: 'Lucida Grande', 'Lucida Sans Unicode', Helvetica, Arial, Tahoma, sans-serif;font-size: 10pt;}"+
+                "th{ text-align: left; }"+
+                "h1{ margin-top: 0px;}"+
+                "li{ line-height: 15pt;}"+
+                ".change-add{color: #272;}"+
+                ".change-delete{color: #722;}"+
+                ".change-edit{ color: #247;}"+
+                ".grayed{color: #AAA;}"+
+                ".error{color: #A33;}"+
+                "pre.console{ color: #333;  font-family: 'Lucida Console', 'Courier New';  padding: 5px;   line-height: 15px;  background-color: #EEE;border: 1px solid #DDD;}"+
+              "</style>"+
+            "</head>"+
+            
+                "<table>"+
+                "<tr><th>Allure report URL:<th><td><a href='${env.BUILD_URL}allure/'>${env.BUILD_URL}allure/</a></td></th>"+
+                "<tr><th>JUnit report URL:<th><td><a href='${env.BUILD_URL}testReport/'>${env.BUILD_URL}testReport/</a></td></th>"+
+                "<tr><th>Console output URL:<th><td><a href='${env.BUILD_URL}console/'>${env.BUILD_URL}console/</a></td></th>"+
+                "<tr><th>Node:<th><td>${node}</td></th>"+
+                "<tr><th>Branch:<th><td>${branch}</td></th>"+
+                "<tr><th>DUT:<th><td>${DUT}</td></th>"+
+                "<tr><th>Suites:<th><td>${suites}</td></th>"+
+                "<tr><th>Run duration:<th><td>${currentBuild.durationString}</td></th>"+
+                "<tr><th>Passed/Failed/Skipped:<th><td>${totalCount}/${failedCount}/${skippedCount}</td></th>"+
+                "</table>",
+                    mimeType: 'text/html',
+                    subject: "[Jenkins] ${jobName} ${node} ${status}",
+                    to: 'Renesas_Test_Team@globallogic.com,dmytro.a.frolov@globallogic.com',
+                    recipientProviders: [[$class: 'CulpritsRecipientProvider']]
+    
+        }
+     }
+}
